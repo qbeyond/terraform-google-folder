@@ -1,8 +1,8 @@
 # Google Cloud Folder Module
 
-This Module is created from the Google Cloud Platform modules folder and holds its git history to be updatable. To Update this module you need to filter the cloud-foundation-fabric repository with the [git-filter-repo](https://github.com/newren/git-filter-repo) plugin and use the existing [filter parameters](./git-repo-filter-module-folder.txt).
-
 This Module allows the creation and management of folders, including support for IAM bindings, organization policies, and hierarchical firewall rules.
+
+Original Module from [Cloud-Foundation-Fabric](https://github.com/GoogleCloudPlatform/cloud-foundation-fabric)
 
 ## Examples
 
@@ -301,3 +301,7 @@ module "folder" {
 | [sink_writer_identities](outputs.tf#L46) | Writer identities created for each sink.                 |           |
 
 <!-- END TFDOC -->
+
+## Contribute
+
+This Module is created from the Google Cloud Platform modules folder and holds its git history to be updatable. To Update this module you need to filter the cloud-foundation-fabric repository with the [git-filter-repo](https://github.com/newren/git-filter-repo) plugin and use the existing [filter parameters](./git-repo-filter-module-folder.txt).
