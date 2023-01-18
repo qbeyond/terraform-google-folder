@@ -43,8 +43,51 @@ content: |-
   This Module creates a GCP Folder
   ```hcl
   {{ include "examples/basic/main.tf" }}
+  {{ include "examples/basic/variables.tf" }}
+  ```
+
+  This Module creates a GCP Folder with a firewall policy
+  It is possible to include yaml config files.
+  ```hcl
+  {{ include "examples/firewall_policies/main.tf" }}
+  {{ include "examples/firewall_policies/variables.tf" }}
+  ```
+
+  ```yaml
+  {{ include "examples/firewall_policies/configs/cidrs.yaml" }}
+  {{ include "examples/firewall_policies/configs/rules.yaml" }}
+  ``` 
+
+  This Module creates a GCP Folder with a hierarchical firewall policy
+  ```hcl
+  {{ include "examples/hierarchical_firewall_policies/main.tf" }}
+  {{ include "examples/hierarchical_firewall_policies/variables.tf" }}
+  ```
+
+  This Module creates a GCP Folder with a iam policies
+  ```hcl
+  {{ include "examples/iam/main.tf" }}
+  {{ include "examples/iam/variables.tf" }}
   ```
   
+  This Module creates a GCP Folder with org policies
+  ```hcl
+  {{ include "examples/org_policies/main.tf" }}
+  {{ include "examples/org_policies/variables.tf" }}
+  ```
+
+  This Module creates a GCP Folder with sink for logging
+  ```hcl
+  {{ include "examples/sink/main.tf" }}
+  {{ include "examples/sink/variables.tf" }}
+  ```
+
+  This Module creates a GCP Folder with tags
+  ```hcl
+  {{ include "examples/tags/main.tf" }}
+  {{ include "examples/tags/variables.tf" }}
+  ```
+
   {{ .Requirements }}
   {{ .Providers }}
   {{ .Inputs }}
