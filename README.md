@@ -1,6 +1,14 @@
 <!-- BEGIN_TF_DOCS -->
 ## Usage
 
+# Google Cloud Folder Module
+
+This module allows the creation and management of folders, including support for IAM bindings, organization policies, and hierarchical firewall rules.
+
+## Examples
+
+### Basic
+
 This Module creates a GCP Folder
 ```hcl
 provider "google" {
@@ -35,8 +43,10 @@ variable "organization_domain" {
 }
 ```
 
-This Module creates a GCP Folder with a firewall policy
-It is possible to include yaml config files.
+### Firewall policy factory
+
+In the same way as for the [organization](../organization) module, the in-built factory allows you to define a single policy, using one file for rules, and an optional file for CIDR range substitution variables.
+Remember that non-absolute paths are relative to the root module (the folder where you run `terraform`).
 ```hcl
 provider "google" {
   project = var.project_id
@@ -109,6 +119,8 @@ allow-ssh-from-iap:
   enable_logging: false
 ```
 
+### Hierarchical firewall policies
+
 This Module creates a GCP Folder with a hierarchical firewall policy
 ```hcl
 provider "google" {
@@ -178,7 +190,9 @@ variable "organization_domain" {
 }
 ```
 
-This Module creates a GCP Folder with a iam policies
+### IAM bindings
+
+This Module creates a GCP Folder with a IAM Bindings
 ```hcl
 provider "google" {
   project = var.project_id
@@ -256,7 +270,9 @@ variable "user_email" {
 }
 ```
 
-This Module creates a GCP Folder with org policies
+### Organization policies
+
+To manage organization policies, the `orgpolicy.googleapis.com` service should be enabled in the quota project.
 ```hcl
 provider "google" {
   project = var.project_id
@@ -329,6 +345,8 @@ variable "organization_domain" {
 }
 ```
 
+### Logging Sinks
+
 This Module creates a GCP Folder with sink for logging
 ```hcl
 provider "google" {
@@ -392,7 +410,8 @@ variable "organization_domain" {
 }
 ```
 
-This Module creates a GCP Folder with tags
+### Tags
+Refer to the [Creating and managing tags](https://cloud.google.com/resource-manager/docs/tags/tags-creating-and-managing) documentation for details on usage.
 ```hcl
 provider "google" {
   project = var.project_id
