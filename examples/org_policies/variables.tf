@@ -1,6 +1,6 @@
-variable "project_id" {
+variable "billing_project_id" {
   type = string
-  description = "The Project ID where to create the Folder"
+  description = "The Project ID of Billing Account"
 }
 
 variable "organization_domain" {

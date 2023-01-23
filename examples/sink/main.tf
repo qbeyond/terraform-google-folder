@@ -1,7 +1,4 @@
 provider "google" {
-  project = var.project_id
-  user_project_override = true
-  billing_project = var.project_id
 }
 
 resource "random_string" "folder_name" {
@@ -24,7 +21,7 @@ data "google_organization" "default" {
 
 resource "google_storage_bucket" "logging" {
   name          = random_string.bucket_name.result
-  project       = var.project_id
+  project       = var.bucket_project_id
   location      = "EU"
   force_destroy = true
 }
