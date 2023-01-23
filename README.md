@@ -89,11 +89,16 @@ variable "organization_domain" {
 }
 ```
 
+`configs/cidrs.yaml`
 ```yaml
 rfc1918:
   - 10.0.0.0/8
   - 172.16.0.0/12
   - 192.168.0.0/16
+```
+
+`configs/rules.yaml`
+```yaml
 allow-admins:
   description: Access from the admin subnet to all subnets
   direction: INGRESS
