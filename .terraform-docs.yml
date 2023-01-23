@@ -63,10 +63,15 @@ content: |-
   {{ include "examples/firewall_policies/variables.tf" }}
   ```
 
+  `configs/cidrs.yaml`
   ```yaml
   {{ include "examples/firewall_policies/configs/cidrs.yaml" }}
+  ```
+
+  `configs/rules.yaml`
+  ```yaml
   {{ include "examples/firewall_policies/configs/rules.yaml" }}
-  ``` 
+  ```
 
   ### Hierarchical firewall policies
 
