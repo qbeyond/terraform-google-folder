@@ -12,9 +12,6 @@ This module allows the creation and management of folders, including support for
 This Module creates a GCP Folder
 ```hcl
 provider "google" {
-  project = var.project_id
-  user_project_override = true
-  billing_project = var.project_id
 }
 
 resource "random_string" "folder_name" {
@@ -33,11 +30,6 @@ module "folder" {
   parent = data.google_organization.default.id
   name   = random_string.folder_name.result
 }
-variable "project_id" {
-  type = string
-  description = "The Project ID where to create the Folder"
-}
-
 variable "organization_domain" {
   type = string
 }
@@ -49,9 +41,6 @@ In the same way as for the [organization](../organization) module, the in-built 
 Remember that non-absolute paths are relative to the root module (the folder where you run `terraform`).
 ```hcl
 provider "google" {
-  project = var.project_id
-  user_project_override = true
-  billing_project = var.project_id
 }
 
 resource "random_string" "folder_name" {
@@ -79,11 +68,6 @@ module "folder" {
     factory-policy = module.folder.firewall_policy_id["test"]
   }
 }
-variable "project_id" {
-  type = string
-  description = "The Project ID where to create the Folder"
-}
-
 variable "organization_domain" {
   type = string
 }
@@ -129,9 +113,6 @@ allow-ssh-from-iap:
 This Module creates a GCP Folder with a hierarchical firewall policy
 ```hcl
 provider "google" {
-  project = var.project_id
-  user_project_override = true
-  billing_project = var.project_id
 }
 
 resource "random_string" "folder_name" {
@@ -185,11 +166,6 @@ module "folder2" {
     iap-policy = module.folder1.firewall_policy_id["iap-policy"]
   }
 }
-variable "project_id" {
-  type = string
-  description = "The Project ID where to create the Folder"
-}
-
 variable "organization_domain" {
   type = string
 }
@@ -200,9 +176,8 @@ variable "organization_domain" {
 This Module creates a GCP Folder with a IAM Bindings
 ```hcl
 provider "google" {
-  project = var.project_id
   user_project_override = true
-  billing_project = var.project_id
+  billing_project = var.billing_project_id
 }
 
 resource "random_string" "folder_name" {
@@ -260,9 +235,9 @@ module "folder" {
     "user:${var.user_email}" = ["roles/storage.objectViewer"]
   }
 }
-variable "project_id" {
+variable "billing_project_id" {
   type = string
-  description = "The Project ID where to create the Folder"
+  description = "The Project ID of Billing Account"
 }
 
 variable "organization_domain" {
@@ -280,9 +255,8 @@ variable "user_email" {
 To manage organization policies, the `orgpolicy.googleapis.com` service should be enabled in the quota project.
 ```hcl
 provider "google" {
-  project = var.project_id
   user_project_override = true
-  billing_project = var.project_id
+  billing_project = var.billing_project_id
 }
 
 resource "random_string" "folder_name" {
@@ -340,9 +314,9 @@ module "folder" {
     }
   }
 }
-variable "project_id" {
+variable "billing_project_id" {
   type = string
-  description = "The Project ID where to create the Folder"
+  description = "The Project ID of Billing Account"
 }
 
 variable "organization_domain" {
@@ -355,9 +329,6 @@ variable "organization_domain" {
 This Module creates a GCP Folder with sink for logging
 ```hcl
 provider "google" {
-  project = var.project_id
-  user_project_override = true
-  billing_project = var.project_id
 }
 
 resource "random_string" "folder_name" {
@@ -380,7 +351,7 @@ data "google_organization" "default" {
 
 resource "google_storage_bucket" "logging" {
   name          = random_string.bucket_name.result
-  project       = var.project_id
+  project       = var.bucket_project_id
   location      = "EU"
   force_destroy = true
 }
@@ -405,9 +376,9 @@ module "folder-sink" {
     }
   }
 }
-variable "project_id" {
+variable "bucket_project_id" {
   type = string
-  description = "The Project ID where to create the Folder"
+  description = "The Project ID where to create the Bucket"
 }
 
 variable "organization_domain" {
@@ -419,9 +390,6 @@ variable "organization_domain" {
 Refer to the [Creating and managing tags](https://cloud.google.com/resource-manager/docs/tags/tags-creating-and-managing) documentation for details on usage.
 ```hcl
 provider "google" {
-  project = var.project_id
-  user_project_override = true
-  billing_project = var.project_id
 }
 
 resource "random_string" "folder_name" {
@@ -456,11 +424,6 @@ module "folder" {
     foo      = google_tags_tag_value.default.id
   }
 }
-variable "project_id" {
-  type = string
-  description = "The Project ID where to create the Folder"
-}
-
 variable "organization_domain" {
   type = string
 }
