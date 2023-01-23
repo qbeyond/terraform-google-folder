@@ -1,0 +1,161 @@
+formatter: "markdown"
+
+# Tested with this version
+# As Majorversion is 0 any change may break
+version: ">=0.16.0"
+
+sections:
+  hide:
+    - header
+    - providers
+
+output:
+  file: "README.md"
+  mode: inject
+
+sort:
+  enabled: true
+  by: required
+
+content: |-
+  {{- define "setDict" -}}
+    {{- $resource := list -}}
+    {{- if hasKey .Dict .Key -}}
+      {{- $resource = get .Dict .Key -}}
+    {{- else -}}
+       {{- $resource = list -}}
+    {{- end -}}
+    {{- $resource := append $resource .Resource -}}
+    {{- $_ := set .Dict .Key $resource -}}
+  {{- end -}}
+  
+  {{- $filesResources := dict -}}
+  {{- $resourceTypes := dict -}}
+  {{- range .Module.Resources -}}
+    {{- template "setDict" dict "Dict" $filesResources "Key" .Position.Filename "Resource" . -}}
+    {{- $isResource := eq "resource" (printf "%s" .GetMode) -}}
+    {{- if $isResource -}}
+      {{- template "setDict" dict "Dict" $resourceTypes "Key" (printf "%s_%s" .ProviderName .Type) "Resource" . -}}
+    {{- end -}}
+  {{- end -}}
+  {{ indent 0 "#" }} Usage
+  
+  # Google Cloud Folder Module
+
+  This module allows the creation and management of folders, including support for IAM bindings, organization policies, and hierarchical firewall rules.
+
+  ## Examples
+
+  ### Basic
+
+  This Module creates a GCP Folder
+  ```hcl
+  {{ include "examples/basic/main.tf" }}
+  {{ include "examples/basic/variables.tf" }}
+  ```
+
+  ### Firewall policy factory
+
+  In the same way as for the [organization](../organization) module, the in-built factory allows you to define a single policy, using one file for rules, and an optional file for CIDR range substitution variables.
+  Remember that non-absolute paths are relative to the root module (the folder where you run `terraform`).
+  ```hcl
+  {{ include "examples/firewall_policies/main.tf" }}
+  {{ include "examples/firewall_policies/variables.tf" }}
+  ```
+
+  `configs/cidrs.yaml`
+  ```yaml
+  {{ include "examples/firewall_policies/configs/cidrs.yaml" }}
+  ```
+
+  `configs/rules.yaml`
+  ```yaml
+  {{ include "examples/firewall_policies/configs/rules.yaml" }}
+  ```
+
+  ### Hierarchical firewall policies
+
+  This Module creates a GCP Folder with a hierarchical firewall policy
+  ```hcl
+  {{ include "examples/hierarchical_firewall_policies/main.tf" }}
+  {{ include "examples/hierarchical_firewall_policies/variables.tf" }}
+  ```
+
+  ### IAM bindings
+
+  This Module creates a GCP Folder with a IAM Bindings
+  ```hcl
+  {{ include "examples/iam/main.tf" }}
+  {{ include "examples/iam/variables.tf" }}
+  ```
+  
+  ### Organization policies
+
+  To manage organization policies, the `orgpolicy.googleapis.com` service should be enabled in the quota project.
+  ```hcl
+  {{ include "examples/org_policies/main.tf" }}
+  {{ include "examples/org_policies/variables.tf" }}
+  ```
+
+  ### Logging Sinks
+
+  This Module creates a GCP Folder with sink for logging
+  ```hcl
+  {{ include "examples/sink/main.tf" }}
+  {{ include "examples/sink/variables.tf" }}
+  ```
+
+  ### Tags
+  Refer to the [Creating and managing tags](https://cloud.google.com/resource-manager/docs/tags/tags-creating-and-managing) documentation for details on usage.
+  ```hcl
+  {{ include "examples/tags/main.tf" }}
+  {{ include "examples/tags/variables.tf" }}
+  ```
+
+  {{ .Requirements }}
+  {{ .Providers }}
+  {{ .Inputs }}
+  {{ .Outputs }}
+  {{ if .Config.Sections.Resources -}}
+    {{- if not (keys $resourceTypes) -}}
+        {{- if not .Config.Settings.HideEmpty -}}
+            {{- indent 0 "#" }} Resource types
+            No resources.
+        {{ end }}
+      {{ else }}
+        {{ indent 0 "#" }} Resource types
+        | Type | Used |
+        |------|-------|
+        {{- range $type,$resources := $resourceTypes }}
+          {{- $url := (first $resources).URL -}}
+          {{- $type = ternary $url (printf "[%s](%s)" $type $url) $type }}
+          | {{ $type }} | {{ len $resources }} |
+        {{- end }}
+        **`Used` only includes resource blocks.** `for_each` and `count` meta arguments, as well as resource blocks of modules are not considered.
+      {{ end }}
+  {{ end -}}
+  {{ .Modules }}
+  {{ if or .Config.Sections.Resources .Config.Sections.DataSources -}}
+      {{- if not (keys $filesResources) -}}
+          {{- if not .Config.Settings.HideEmpty -}}
+              {{ indent 0 "#" }} Resources by Files
+              No resources.
+          {{ end }}
+      {{ else }}
+          {{ indent 0 "#" }} Resources by Files
+          {{- range $fileName,$resources := $filesResources }}
+              {{ indent 1 "#" }} {{ $fileName }}
+              | Name | Type |
+              |------|------|
+              
+              {{- range $resources -}}
+                {{- $isResource := and $.Config.Sections.Resources ( eq "resource" (printf "%s" .GetMode)) }}
+                {{- $isDataResource := and $.Config.Sections.DataSources ( eq "data source" (printf "%s" .GetMode)) }}
+                {{- if or $isResource $isDataResource }}
+                    {{- $fullspec := ternary .URL (printf "[%s](%s)" .Spec .URL) .Spec }}
+                    | {{ $fullspec }} | {{ .GetMode }} |
+                {{- end }}
+              {{- end -}}
+          {{- end }}
+      {{ end }}
+  {{- end -}}

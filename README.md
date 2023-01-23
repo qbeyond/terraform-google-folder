@@ -1,38 +1,280 @@
+<!-- BEGIN_TF_DOCS -->
+## Usage
+
 # Google Cloud Folder Module
 
 This module allows the creation and management of folders, including support for IAM bindings, organization policies, and hierarchical firewall rules.
 
 ## Examples
 
-### IAM bindings
+### Basic
 
+This Module creates a GCP Folder
 ```hcl
+provider "google" {
+}
+
+resource "random_string" "folder_name" {
+  length           = 8
+  special          = false
+  upper            = false
+  numeric          = false
+}
+
+data "google_organization" "default" {
+  domain = var.organization_domain
+}
+
 module "folder" {
-  source = "./fabric/modules/folder"
-  parent = "organizations/1234567890"
-  name  = "Folder name"
-  group_iam       = {
-    "cloud-owners@example.org" = [
-        "roles/owner",
-        "roles/resourcemanager.projectCreator"
-    ]
+  source = "../.."
+  parent = data.google_organization.default.id
+  name   = random_string.folder_name.result
+}
+variable "organization_domain" {
+  type = string
+}
+```
+
+### Firewall policy factory
+
+In the same way as for the [organization](../organization) module, the in-built factory allows you to define a single policy, using one file for rules, and an optional file for CIDR range substitution variables.
+Remember that non-absolute paths are relative to the root module (the folder where you run `terraform`).
+```hcl
+provider "google" {
+}
+
+resource "random_string" "folder_name" {
+  length           = 8
+  special          = false
+  upper            = false
+  numeric          = false
+}
+
+data "google_organization" "default" {
+  domain = var.organization_domain
+}
+
+module "folder" {
+  source = "../.."
+  parent = data.google_organization.default.id
+  name   = random_string.folder_name.result
+
+  firewall_policy_factory = {
+    cidr_file   = "configs/cidrs.yaml"
+    policy_name = "test"
+    rules_file  = "configs/rules.yaml"
   }
-  iam = {
-    "roles/owner" = ["user:one@example.com"]
+  firewall_policy_association = {
+    factory-policy = module.folder.firewall_policy_id["test"]
   }
 }
-# tftest modules=1 resources=3
+variable "organization_domain" {
+  type = string
+}
+```
+
+`configs/cidrs.yaml`
+```yaml
+rfc1918:
+  - 10.0.0.0/8
+  - 172.16.0.0/12
+  - 192.168.0.0/16
+```
+
+`configs/rules.yaml`
+```yaml
+allow-admins:
+  description: Access from the admin subnet to all subnets
+  direction: INGRESS
+  action: allow
+  priority: 1000
+  ranges:
+    - $rfc1918
+  ports:
+    all: []
+  target_resources: null
+  enable_logging: false
+
+allow-ssh-from-iap:
+  description: Enable SSH from IAP
+  direction: INGRESS
+  action: allow
+  priority: 1002
+  ranges:
+    - 35.235.240.0/20
+  ports:
+    tcp: ["22"]
+  target_resources: null
+  enable_logging: false
+```
+
+### Hierarchical firewall policies
+
+This Module creates a GCP Folder with a hierarchical firewall policy
+```hcl
+provider "google" {
+}
+
+resource "random_string" "folder_name" {
+  length           = 8
+  special          = false
+  upper            = false
+  numeric          = false
+}
+
+resource "random_string" "folder_name_two" {
+  length           = 8
+  special          = false
+  upper            = false
+  numeric          = false
+}
+
+data "google_organization" "default" {
+  domain = var.organization_domain
+}
+
+module "folder1" {
+  source = "../.."
+  parent = data.google_organization.default.id
+  name   = random_string.folder_name.result
+
+  firewall_policies = {
+    iap-policy = {
+      allow-iap-ssh = {
+        description             = "Always allow ssh from IAP"
+        direction               = "INGRESS"
+        action                  = "allow"
+        priority                = 100
+        ranges                  = ["35.235.240.0/20"]
+        ports                   = { tcp = ["22"] }
+        target_service_accounts = null
+        target_resources        = null
+        logging                 = false
+      }
+    }
+  }
+  firewall_policy_association = {
+    iap-policy = "iap-policy"
+  }
+}
+
+module "folder2" {
+  source = "../.."
+  parent = data.google_organization.default.id
+  name   = random_string.folder_name_two.result
+  firewall_policy_association = {
+    iap-policy = module.folder1.firewall_policy_id["iap-policy"]
+  }
+}
+variable "organization_domain" {
+  type = string
+}
+```
+
+### IAM bindings
+
+This Module creates a GCP Folder with a IAM Bindings
+```hcl
+provider "google" {
+  user_project_override = true
+  billing_project = var.billing_project_id
+}
+
+resource "random_string" "folder_name" {
+  length           = 8
+  special          = false
+  upper            = false
+  numeric          = false
+}
+
+data "google_organization" "default" {
+  domain = var.organization_domain
+}
+
+# It is necessary to have permissions on your organizations level.
+# You can add permissions to your account via https://admin.google.com
+resource "google_cloud_identity_group" "basic" {
+  parent = "customers/${data.google_organization.default.directory_customer_id}"
+
+  group_key {
+      id = "folderiamtest@${data.google_organization.default.domain}"
+  }
+
+  labels = {
+    "cloudidentity.googleapis.com/groups.discussion_forum" = ""
+  }
+}
+
+module "folder" {
+  source = "../.."
+  parent = data.google_organization.default.id
+  name   = random_string.folder_name.result
+
+  #authorative
+  group_iam = {
+    "${google_cloud_identity_group.basic.group_key.0.id}" = [
+      "roles/owner",
+      "roles/resourcemanager.folderAdmin",
+      "roles/resourcemanager.projectCreator"
+    ]
+  }
+
+  # authorative
+  iam = {
+    "roles/owner" = ["user:${var.user_email}"]
+  }
+
+  # additive
+  iam_additive = {
+    "roles/compute.admin"  = ["user:${var.user_email}"]
+    "roles/compute.viewer" = ["user:${var.user_email}"]
+  }
+
+  iam_additive_members = {
+    "user:${var.user_email}" = ["roles/storage.admin"]
+    "user:${var.user_email}" = ["roles/storage.objectViewer"]
+  }
+}
+variable "billing_project_id" {
+  type = string
+  description = "The Project ID to use for billing."
+}
+
+variable "organization_domain" {
+  type = string
+}
+
+variable "user_email" {
+  type = string
+  description = "Email of an existing GCP User"
+}
 ```
 
 ### Organization policies
 
 To manage organization policies, the `orgpolicy.googleapis.com` service should be enabled in the quota project.
-
 ```hcl
+provider "google" {
+  user_project_override = true
+  billing_project = var.billing_project_id
+}
+
+resource "random_string" "folder_name" {
+  length           = 8
+  special          = false
+  upper            = false
+  numeric          = false
+}
+
+data "google_organization" "default" {
+  domain = var.organization_domain
+}
+
 module "folder" {
-  source = "./fabric/modules/folder"
-  parent = "organizations/1234567890"
-  name  = "Folder name"
+  source = "../.."
+  parent = data.google_organization.default.id
+  name   = random_string.folder_name.result
+
   org_policies = {
     "compute.disableGuestAttributesAccess" = {
       enforce = true
@@ -72,254 +314,218 @@ module "folder" {
     }
   }
 }
-# tftest modules=1 resources=8
-```
-
-### Organization policy factory
-
-See the [organization policy factory in the project module](../project#organization-policy-factory).
-
-### Firewall policy factory
-
-In the same way as for the [organization](../organization) module, the in-built factory allows you to define a single policy, using one file for rules, and an optional file for CIDR range substitution variables. Remember that non-absolute paths are relative to the root module (the folder where you run `terraform`).
-
-```hcl
-module "folder" {
-  source          = "./fabric/modules/folder"
-  parent = "organizations/1234567890"
-  name  = "Folder name"
-  firewall_policy_factory = {
-    cidr_file   = "configs/firewall-policies/cidrs.yaml"
-    policy_name = null
-    rules_file  = "configs/firewall-policies/rules.yaml"
-  }
-  firewall_policy_association = {
-    factory-policy = module.folder.firewall_policy_id["factory"]
-  }
+variable "billing_project_id" {
+  type = string
+  description = "The Project ID to use for billing."
 }
-# tftest modules=1 resources=5 files=cidrs,rules
-```
 
-```yaml
-# tftest file cidrs configs/firewall-policies/cidrs.yaml
-rfc1918:
-  - 10.0.0.0/8
-  - 172.16.0.0/12
-  - 192.168.0.0/16
-```
-
-```yaml
-# tftest file rules configs/firewall-policies/rules.yaml
-allow-admins:
-  description: Access from the admin subnet to all subnets
-  direction: INGRESS
-  action: allow
-  priority: 1000
-  ranges:
-    - $rfc1918
-  ports:
-    all: []
-  target_resources: null
-  enable_logging: false
-
-allow-ssh-from-iap:
-  description: Enable SSH from IAP
-  direction: INGRESS
-  action: allow
-  priority: 1002
-  ranges:
-    - 35.235.240.0/20
-  ports:
-    tcp: ["22"]
-  target_resources: null
-  enable_logging: false
+variable "organization_domain" {
+  type = string
+}
 ```
 
 ### Logging Sinks
 
+This Module creates a GCP Folder with sink for logging
 ```hcl
-module "gcs" {
-  source        = "./fabric/modules/gcs"
-  project_id    = "my-project"
-  name          = "gcs_sink"
+provider "google" {
+}
+
+resource "random_string" "folder_name" {
+  length           = 8
+  special          = false
+  upper            = false
+  numeric          = false
+}
+
+resource "random_string" "bucket_name" {
+  length           = 8
+  special          = false
+  upper            = false
+  numeric          = false
+}
+
+data "google_organization" "default" {
+  domain = var.organization_domain
+}
+
+resource "google_storage_bucket" "logging" {
+  name          = random_string.bucket_name.result
+  project       = var.bucket_project_id
+  location      = "EU"
   force_destroy = true
 }
 
-module "dataset" {
-  source     = "./fabric/modules/bigquery-dataset"
-  project_id = "my-project"
-  id         = "bq_sink"
-}
-
-module "pubsub" {
-  source     = "./fabric/modules/pubsub"
-  project_id = "my-project"
-  name       = "pubsub_sink"
-}
-
-module "bucket" {
-  source      = "./fabric/modules/logging-bucket"
-  parent_type = "project"
-  parent      = "my-project"
-  id          = "bucket"
-}
-
-
 module "folder-sink" {
-  source = "./fabric/modules/folder"
-  parent = "folders/657104291943"
-  name   = "my-folder"
+  source = "../.."
+  parent = data.google_organization.default.id
+  name   = random_string.folder_name.result
+
   logging_sinks = {
-    warnings = {
-      destination = module.gcs.id
-      filter      = "severity=WARNING"
-      type        = "storage"
-    }
-    info = {
-      destination = module.dataset.id
-      filter      = "severity=INFO"
-      type        = "bigquery"
-    }
-    notice = {
-      destination = module.pubsub.id
-      filter      = "severity=NOTICE"
-      type        = "pubsub"
-    }
-    debug = {
-      destination = module.bucket.id
-      filter      = "severity=DEBUG"
+    "info" = {
+      bq_partitioned_table = false
+      description = "This is sending info logs to the bucket"
+      destination = google_storage_bucket.logging.id
+      disabled = false
       exclusions = {
-        no-compute = "logName:compute"
+        "key" = "value"
       }
-      type = "logging"
+      filter = "severity=INFO"
+      include_children = true
+      type = "storage"
     }
   }
-  logging_exclusions = {
-    no-gce-instances = "resource.type=gce_instance"
-  }
 }
-# tftest modules=5 resources=14
+variable "bucket_project_id" {
+  type = string
+  description = "The Project ID where to create the Bucket"
+}
+
+variable "organization_domain" {
+  type = string
+}
 ```
 
-### Hierarchical firewall policies
-
-```hcl
-module "folder1" {
-  source = "./fabric/modules/folder"
-  parent = var.organization_id
-  name   = "policy-container"
-
-  firewall_policies = {
-    iap-policy = {
-      allow-iap-ssh = {
-        description             = "Always allow ssh from IAP"
-        direction               = "INGRESS"
-        action                  = "allow"
-        priority                = 100
-        ranges                  = ["35.235.240.0/20"]
-        ports                   = { tcp = ["22"] }
-        target_service_accounts = null
-        target_resources        = null
-        logging                 = false
-      }
-    }
-  }
-  firewall_policy_association = {
-    iap-policy = "iap-policy"
-  }
-}
-
-module "folder2" {
-  source = "./fabric/modules/folder"
-  parent = var.organization_id
-  name   = "hf2"
-  firewall_policy_association = {
-    iap-policy = module.folder1.firewall_policy_id["iap-policy"]
-  }
-}
-# tftest modules=2 resources=6
-```
-
-## Tags
-
+### Tags
 Refer to the [Creating and managing tags](https://cloud.google.com/resource-manager/docs/tags/tags-creating-and-managing) documentation for details on usage.
-
 ```hcl
-module "org" {
-  source          = "./fabric/modules/organization"
-  organization_id = var.organization_id
-  tags = {
-    environment = {
-      description  = "Environment specification."
-      iam          = null
-      values = {
-        dev  = null
-        prod = null
-      }
-    }
-  }
+provider "google" {
+}
+
+resource "random_string" "folder_name" {
+  length           = 8
+  special          = false
+  upper            = false
+  numeric          = false
+}
+
+data "google_organization" "default" {
+  domain = var.organization_domain
+}
+
+resource "google_tags_tag_key" "default" {
+  parent = data.google_organization.default.id
+  short_name = "keyname"
+  description = "For keyname resources."
+}
+
+resource "google_tags_tag_value" "default" {
+    parent = google_tags_tag_key.default.id
+    short_name = "valuename"
+    description = "For valuename resources."
 }
 
 module "folder" {
-  source = "./fabric/modules/folder"
-  name   = "Test"
-  parent = module.org.organization_id
+  source = "../.."
+  parent = data.google_organization.default.id
+  name   = random_string.folder_name.result
+
   tag_bindings = {
-    env-prod = module.org.tag_values["environment/prod"].id
-    foo      = "tagValues/12345678"
+    foo      = google_tags_tag_value.default.id
   }
 }
-# tftest modules=2 resources=6
+variable "organization_domain" {
+  type = string
+}
 ```
 
-<!-- TFDOC OPTS files:1 -->
-<!-- BEGIN TFDOC -->
+## Requirements
 
-## Files
+| Name | Version |
+|------|---------|
+| <a name="requirement_terraform"></a> [terraform](#requirement\_terraform) | >= 1.3.1 |
+| <a name="requirement_google"></a> [google](#requirement\_google) | >= 4.40.0 |
+| <a name="requirement_google-beta"></a> [google-beta](#requirement\_google-beta) | >= 4.40.0 |
 
-| name | description | resources |
-|---|---|---|
-| [firewall-policies.tf](./firewall-policies.tf) | None | <code>google_compute_firewall_policy</code> · <code>google_compute_firewall_policy_association</code> · <code>google_compute_firewall_policy_rule</code> |
-| [iam.tf](./iam.tf) | IAM bindings, roles and audit logging resources. | <code>google_folder_iam_binding</code> · <code>google_folder_iam_member</code> |
-| [logging.tf](./logging.tf) | Log sinks and supporting resources. | <code>google_bigquery_dataset_iam_member</code> · <code>google_logging_folder_exclusion</code> · <code>google_logging_folder_sink</code> · <code>google_project_iam_member</code> · <code>google_pubsub_topic_iam_member</code> · <code>google_storage_bucket_iam_member</code> |
-| [main.tf](./main.tf) | Module-level locals and resources. | <code>google_essential_contacts_contact</code> · <code>google_folder</code> |
-| [organization-policies.tf](./organization-policies.tf) | Folder-level organization policies. | <code>google_org_policy_policy</code> |
-| [outputs.tf](./outputs.tf) | Module outputs. |  |
-| [tags.tf](./tags.tf) | None | <code>google_tags_tag_binding</code> |
-| [variables.tf](./variables.tf) | Module variables. |  |
-| [versions.tf](./versions.tf) | Version pins. |  |
+## Inputs
 
-## Variables
-
-| name | description | type | required | default |
-|---|---|:---:|:---:|:---:|
-| [contacts](variables.tf#L17) | List of essential contacts for this resource. Must be in the form EMAIL -> [NOTIFICATION_TYPES]. Valid notification types are ALL, SUSPENSION, SECURITY, TECHNICAL, BILLING, LEGAL, PRODUCT_UPDATES. | <code>map&#40;list&#40;string&#41;&#41;</code> |  | <code>&#123;&#125;</code> |
-| [firewall_policies](variables.tf#L24) | Hierarchical firewall policies created in this folder. | <code title="map&#40;map&#40;object&#40;&#123;&#10;  action                  &#61; string&#10;  description             &#61; string&#10;  direction               &#61; string&#10;  logging                 &#61; bool&#10;  ports                   &#61; map&#40;list&#40;string&#41;&#41;&#10;  priority                &#61; number&#10;  ranges                  &#61; list&#40;string&#41;&#10;  target_resources        &#61; list&#40;string&#41;&#10;  target_service_accounts &#61; list&#40;string&#41;&#10;&#125;&#41;&#41;&#41;">map&#40;map&#40;object&#40;&#123;&#8230;&#125;&#41;&#41;&#41;</code> |  | <code>&#123;&#125;</code> |
-| [firewall_policy_association](variables.tf#L41) | The hierarchical firewall policy to associate to this folder. Must be either a key in the `firewall_policies` map or the id of a policy defined somewhere else. | <code>map&#40;string&#41;</code> |  | <code>&#123;&#125;</code> |
-| [firewall_policy_factory](variables.tf#L48) | Configuration for the firewall policy factory. | <code title="object&#40;&#123;&#10;  cidr_file   &#61; string&#10;  policy_name &#61; string&#10;  rules_file  &#61; string&#10;&#125;&#41;">object&#40;&#123;&#8230;&#125;&#41;</code> |  | <code>null</code> |
-| [folder_create](variables.tf#L58) | Create folder. When set to false, uses id to reference an existing folder. | <code>bool</code> |  | <code>true</code> |
-| [group_iam](variables.tf#L64) | Authoritative IAM binding for organization groups, in {GROUP_EMAIL => [ROLES]} format. Group emails need to be static. Can be used in combination with the `iam` variable. | <code>map&#40;list&#40;string&#41;&#41;</code> |  | <code>&#123;&#125;</code> |
-| [iam](variables.tf#L71) | IAM bindings in {ROLE => [MEMBERS]} format. | <code>map&#40;list&#40;string&#41;&#41;</code> |  | <code>&#123;&#125;</code> |
-| [iam_additive](variables.tf#L78) | Non authoritative IAM bindings, in {ROLE => [MEMBERS]} format. | <code>map&#40;list&#40;string&#41;&#41;</code> |  | <code>&#123;&#125;</code> |
-| [iam_additive_members](variables.tf#L85) | IAM additive bindings in {MEMBERS => [ROLE]} format. This might break if members are dynamic values. | <code>map&#40;list&#40;string&#41;&#41;</code> |  | <code>&#123;&#125;</code> |
-| [id](variables.tf#L92) | Folder ID in case you use folder_create=false. | <code>string</code> |  | <code>null</code> |
-| [logging_exclusions](variables.tf#L98) | Logging exclusions for this folder in the form {NAME -> FILTER}. | <code>map&#40;string&#41;</code> |  | <code>&#123;&#125;</code> |
-| [logging_sinks](variables.tf#L105) | Logging sinks to create for the organization. | <code title="map&#40;object&#40;&#123;&#10;  bq_partitioned_table &#61; optional&#40;bool&#41;&#10;  description          &#61; optional&#40;string&#41;&#10;  destination          &#61; string&#10;  disabled             &#61; optional&#40;bool, false&#41;&#10;  exclusions           &#61; optional&#40;map&#40;string&#41;, &#123;&#125;&#41;&#10;  filter               &#61; string&#10;  include_children     &#61; optional&#40;bool, true&#41;&#10;  type                 &#61; string&#10;&#125;&#41;&#41;">map&#40;object&#40;&#123;&#8230;&#125;&#41;&#41;</code> |  | <code>&#123;&#125;</code> |
-| [name](variables.tf#L135) | Folder name. | <code>string</code> |  | <code>null</code> |
-| [org_policies](variables.tf#L141) | Organization policies applied to this folder keyed by policy name. | <code title="map&#40;object&#40;&#123;&#10;  inherit_from_parent &#61; optional&#40;bool&#41; &#35; for list policies only.&#10;  reset               &#61; optional&#40;bool&#41;&#10;  allow &#61; optional&#40;object&#40;&#123;&#10;    all    &#61; optional&#40;bool&#41;&#10;    values &#61; optional&#40;list&#40;string&#41;&#41;&#10;  &#125;&#41;&#41;&#10;  deny &#61; optional&#40;object&#40;&#123;&#10;    all    &#61; optional&#40;bool&#41;&#10;    values &#61; optional&#40;list&#40;string&#41;&#41;&#10;  &#125;&#41;&#41;&#10;  enforce &#61; optional&#40;bool, true&#41; &#35; for boolean policies only.&#10;  rules &#61; optional&#40;list&#40;object&#40;&#123;&#10;    allow &#61; optional&#40;object&#40;&#123;&#10;      all    &#61; optional&#40;bool&#41;&#10;      values &#61; optional&#40;list&#40;string&#41;&#41;&#10;    &#125;&#41;&#41;&#10;    deny &#61; optional&#40;object&#40;&#123;&#10;      all    &#61; optional&#40;bool&#41;&#10;      values &#61; optional&#40;list&#40;string&#41;&#41;&#10;    &#125;&#41;&#41;&#10;    enforce &#61; optional&#40;bool, true&#41; &#35; for boolean policies only.&#10;    condition &#61; object&#40;&#123;&#10;      description &#61; optional&#40;string&#41;&#10;      expression  &#61; optional&#40;string&#41;&#10;      location    &#61; optional&#40;string&#41;&#10;      title       &#61; optional&#40;string&#41;&#10;    &#125;&#41;&#10;  &#125;&#41;&#41;, &#91;&#93;&#41;&#10;&#125;&#41;&#41;">map&#40;object&#40;&#123;&#8230;&#125;&#41;&#41;</code> |  | <code>&#123;&#125;</code> |
-| [org_policies_data_path](variables.tf#L181) | Path containing org policies in YAML format. | <code>string</code> |  | <code>null</code> |
-| [parent](variables.tf#L187) | Parent in folders/folder_id or organizations/org_id format. | <code>string</code> |  | <code>null</code> |
-| [tag_bindings](variables.tf#L197) | Tag bindings for this folder, in key => tag value id format. | <code>map&#40;string&#41;</code> |  | <code>null</code> |
-
+| Name | Description | Type | Default | Required |
+|------|-------------|------|---------|:--------:|
+| <a name="input_contacts"></a> [contacts](#input\_contacts) | List of essential contacts for this resource. Must be in the form EMAIL -> [NOTIFICATION\_TYPES]. Valid notification types are ALL, SUSPENSION, SECURITY, TECHNICAL, BILLING, LEGAL, PRODUCT\_UPDATES. | `map(list(string))` | `{}` | no |
+| <a name="input_firewall_policies"></a> [firewall\_policies](#input\_firewall\_policies) | Hierarchical firewall policies created in this folder. | <pre>map(map(object({<br>    action                  = string<br>    description             = string<br>    direction               = string<br>    logging                 = bool<br>    ports                   = map(list(string))<br>    priority                = number<br>    ranges                  = list(string)<br>    target_resources        = list(string)<br>    target_service_accounts = list(string)<br>  })))</pre> | `{}` | no |
+| <a name="input_firewall_policy_association"></a> [firewall\_policy\_association](#input\_firewall\_policy\_association) | The hierarchical firewall policy to associate to this folder. Must be either a key in the `firewall_policies` map or the id of a policy defined somewhere else. | `map(string)` | `{}` | no |
+| <a name="input_firewall_policy_factory"></a> [firewall\_policy\_factory](#input\_firewall\_policy\_factory) | Configuration for the firewall policy factory. | <pre>object({<br>    cidr_file   = string<br>    policy_name = string<br>    rules_file  = string<br>  })</pre> | `null` | no |
+| <a name="input_folder_create"></a> [folder\_create](#input\_folder\_create) | Create folder. When set to false, uses id to reference an existing folder. | `bool` | `true` | no |
+| <a name="input_group_iam"></a> [group\_iam](#input\_group\_iam) | Authoritative IAM binding for organization groups, in {GROUP\_EMAIL => [ROLES]} format. Group emails need to be static. Can be used in combination with the `iam` variable. | `map(list(string))` | `{}` | no |
+| <a name="input_iam"></a> [iam](#input\_iam) | IAM bindings in {ROLE => [MEMBERS]} format. | `map(list(string))` | `{}` | no |
+| <a name="input_iam_additive"></a> [iam\_additive](#input\_iam\_additive) | Non authoritative IAM bindings, in {ROLE => [MEMBERS]} format. | `map(list(string))` | `{}` | no |
+| <a name="input_iam_additive_members"></a> [iam\_additive\_members](#input\_iam\_additive\_members) | IAM additive bindings in {MEMBERS => [ROLE]} format. This might break if members are dynamic values. | `map(list(string))` | `{}` | no |
+| <a name="input_id"></a> [id](#input\_id) | Folder ID in case you use folder\_create=false. | `string` | `null` | no |
+| <a name="input_logging_exclusions"></a> [logging\_exclusions](#input\_logging\_exclusions) | Logging exclusions for this folder in the form {NAME -> FILTER}. | `map(string)` | `{}` | no |
+| <a name="input_logging_sinks"></a> [logging\_sinks](#input\_logging\_sinks) | Logging sinks to create for the organization. | <pre>map(object({<br>    bq_partitioned_table = optional(bool)<br>    description          = optional(string)<br>    destination          = string<br>    disabled             = optional(bool, false)<br>    exclusions           = optional(map(string), {})<br>    filter               = string<br>    include_children     = optional(bool, true)<br>    type                 = string<br>  }))</pre> | `{}` | no |
+| <a name="input_name"></a> [name](#input\_name) | Folder name. | `string` | `null` | no |
+| <a name="input_org_policies"></a> [org\_policies](#input\_org\_policies) | Organization policies applied to this folder keyed by policy name. | <pre>map(object({<br>    inherit_from_parent = optional(bool) # for list policies only.<br>    reset               = optional(bool)<br><br>    # default (unconditional) values<br>    allow = optional(object({<br>      all    = optional(bool)<br>      values = optional(list(string))<br>    }))<br>    deny = optional(object({<br>      all    = optional(bool)<br>      values = optional(list(string))<br>    }))<br>    enforce = optional(bool, true) # for boolean policies only.<br><br>    # conditional values<br>    rules = optional(list(object({<br>      allow = optional(object({<br>        all    = optional(bool)<br>        values = optional(list(string))<br>      }))<br>      deny = optional(object({<br>        all    = optional(bool)<br>        values = optional(list(string))<br>      }))<br>      enforce = optional(bool, true) # for boolean policies only.<br>      condition = object({<br>        description = optional(string)<br>        expression  = optional(string)<br>        location    = optional(string)<br>        title       = optional(string)<br>      })<br>    })), [])<br>  }))</pre> | `{}` | no |
+| <a name="input_org_policies_data_path"></a> [org\_policies\_data\_path](#input\_org\_policies\_data\_path) | Path containing org policies in YAML format. | `string` | `null` | no |
+| <a name="input_parent"></a> [parent](#input\_parent) | Parent in folders/folder\_id or organizations/org\_id format. | `string` | `null` | no |
+| <a name="input_tag_bindings"></a> [tag\_bindings](#input\_tag\_bindings) | Tag bindings for this folder, in key => tag value id format. | `map(string)` | `null` | no |
 ## Outputs
 
-| name | description | sensitive |
-|---|---|:---:|
-| [firewall_policies](outputs.tf#L16) | Map of firewall policy resources created in this folder. |  |
-| [firewall_policy_id](outputs.tf#L21) | Map of firewall policy ids created in this folder. |  |
-| [folder](outputs.tf#L26) | Folder resource. |  |
-| [id](outputs.tf#L31) | Folder id. |  |
-| [name](outputs.tf#L40) | Folder name. |  |
-| [sink_writer_identities](outputs.tf#L45) | Writer identities created for each sink. |  |
+| Name | Description |
+|------|-------------|
+| <a name="output_firewall_policies"></a> [firewall\_policies](#output\_firewall\_policies) | Map of firewall policy resources created in this folder. |
+| <a name="output_firewall_policy_id"></a> [firewall\_policy\_id](#output\_firewall\_policy\_id) | Map of firewall policy ids created in this folder. |
+| <a name="output_folder"></a> [folder](#output\_folder) | Folder resource. |
+| <a name="output_id"></a> [id](#output\_id) | Folder id. |
+| <a name="output_name"></a> [name](#output\_name) | Folder name. |
+| <a name="output_sink_writer_identities"></a> [sink\_writer\_identities](#output\_sink\_writer\_identities) | Writer identities created for each sink. |
 
-<!-- END TFDOC -->
+## Resource types
+| Type | Used |
+|------|-------|
+| [google-beta_google_essential_contacts_contact](https://registry.terraform.io/providers/hashicorp/google-beta/latest/docs/resources/google_essential_contacts_contact) | 1 |
+| [google_bigquery_dataset_iam_member](https://registry.terraform.io/providers/hashicorp/google/latest/docs/resources/bigquery_dataset_iam_member) | 1 |
+| [google_compute_firewall_policy](https://registry.terraform.io/providers/hashicorp/google/latest/docs/resources/compute_firewall_policy) | 1 |
+| [google_compute_firewall_policy_association](https://registry.terraform.io/providers/hashicorp/google/latest/docs/resources/compute_firewall_policy_association) | 1 |
+| [google_compute_firewall_policy_rule](https://registry.terraform.io/providers/hashicorp/google/latest/docs/resources/compute_firewall_policy_rule) | 1 |
+| [google_folder](https://registry.terraform.io/providers/hashicorp/google/latest/docs/resources/folder) | 1 |
+| [google_folder_iam_binding](https://registry.terraform.io/providers/hashicorp/google/latest/docs/resources/folder_iam_binding) | 1 |
+| [google_folder_iam_member](https://registry.terraform.io/providers/hashicorp/google/latest/docs/resources/folder_iam_member) | 1 |
+| [google_logging_folder_exclusion](https://registry.terraform.io/providers/hashicorp/google/latest/docs/resources/logging_folder_exclusion) | 1 |
+| [google_logging_folder_sink](https://registry.terraform.io/providers/hashicorp/google/latest/docs/resources/logging_folder_sink) | 1 |
+| [google_org_policy_policy](https://registry.terraform.io/providers/hashicorp/google/latest/docs/resources/org_policy_policy) | 1 |
+| [google_project_iam_member](https://registry.terraform.io/providers/hashicorp/google/latest/docs/resources/project_iam_member) | 1 |
+| [google_pubsub_topic_iam_member](https://registry.terraform.io/providers/hashicorp/google/latest/docs/resources/pubsub_topic_iam_member) | 1 |
+| [google_storage_bucket_iam_member](https://registry.terraform.io/providers/hashicorp/google/latest/docs/resources/storage_bucket_iam_member) | 1 |
+| [google_tags_tag_binding](https://registry.terraform.io/providers/hashicorp/google/latest/docs/resources/tags_tag_binding) | 1 |
+**`Used` only includes resource blocks.** `for_each` and `count` meta arguments, as well as resource blocks of modules are not considered.
+
+## Modules
+
+No modules.
+
+## Resources by Files
+### firewall-policies.tf
+| Name | Type |
+|------|------|
+| [google_compute_firewall_policy.policy](https://registry.terraform.io/providers/hashicorp/google/latest/docs/resources/compute_firewall_policy) | resource |
+| [google_compute_firewall_policy_association.association](https://registry.terraform.io/providers/hashicorp/google/latest/docs/resources/compute_firewall_policy_association) | resource |
+| [google_compute_firewall_policy_rule.rule](https://registry.terraform.io/providers/hashicorp/google/latest/docs/resources/compute_firewall_policy_rule) | resource |
+### iam.tf
+| Name | Type |
+|------|------|
+| [google_folder_iam_binding.authoritative](https://registry.terraform.io/providers/hashicorp/google/latest/docs/resources/folder_iam_binding) | resource |
+| [google_folder_iam_member.additive](https://registry.terraform.io/providers/hashicorp/google/latest/docs/resources/folder_iam_member) | resource |
+### logging.tf
+| Name | Type |
+|------|------|
+| [google_bigquery_dataset_iam_member.bq-sinks-binding](https://registry.terraform.io/providers/hashicorp/google/latest/docs/resources/bigquery_dataset_iam_member) | resource |
+| [google_logging_folder_exclusion.logging-exclusion](https://registry.terraform.io/providers/hashicorp/google/latest/docs/resources/logging_folder_exclusion) | resource |
+| [google_logging_folder_sink.sink](https://registry.terraform.io/providers/hashicorp/google/latest/docs/resources/logging_folder_sink) | resource |
+| [google_project_iam_member.bucket-sinks-binding](https://registry.terraform.io/providers/hashicorp/google/latest/docs/resources/project_iam_member) | resource |
+| [google_pubsub_topic_iam_member.pubsub-sinks-binding](https://registry.terraform.io/providers/hashicorp/google/latest/docs/resources/pubsub_topic_iam_member) | resource |
+| [google_storage_bucket_iam_member.gcs-sinks-binding](https://registry.terraform.io/providers/hashicorp/google/latest/docs/resources/storage_bucket_iam_member) | resource |
+### main.tf
+| Name | Type |
+|------|------|
+| [google-beta_google_essential_contacts_contact.contact](https://registry.terraform.io/providers/hashicorp/google-beta/latest/docs/resources/google_essential_contacts_contact) | resource |
+| [google_folder.folder](https://registry.terraform.io/providers/hashicorp/google/latest/docs/resources/folder) | resource |
+| [google_folder.folder](https://registry.terraform.io/providers/hashicorp/google/latest/docs/data-sources/folder) | data source |
+### organization-policies.tf
+| Name | Type |
+|------|------|
+| [google_org_policy_policy.default](https://registry.terraform.io/providers/hashicorp/google/latest/docs/resources/org_policy_policy) | resource |
+### tags.tf
+| Name | Type |
+|------|------|
+| [google_tags_tag_binding.binding](https://registry.terraform.io/providers/hashicorp/google/latest/docs/resources/tags_tag_binding) | resource |
+<!-- END_TF_DOCS -->
