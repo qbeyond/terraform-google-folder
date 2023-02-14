@@ -528,4 +528,9 @@ No modules.
 | Name | Type |
 |------|------|
 | [google_tags_tag_binding.binding](https://registry.terraform.io/providers/hashicorp/google/latest/docs/resources/tags_tag_binding) | resource |
+## Contribute
+
+This module is derived from [google cloud foundation fabric module `folder` v19](https://github.com/GoogleCloudPlatform/cloud-foundation-fabric/tree/v19.0.0/modules/folder).
+It is designed to allow creation and management of folders, including support for IAM bindings, organization policies, and hierarchical firewall rules.
+Refer to [guide in `terraform-google-landing-zone` repository](https://github.com/qbeyond/terraform-google-landing-zone/tree/main#updating-a-repository) for information on integrating changes.
 <!-- END_TF_DOCS -->
